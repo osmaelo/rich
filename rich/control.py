@@ -1,20 +1,31 @@
-from typing import Callable, Dict, Iterable, List, TYPE_CHECKING, Union
+import time
+from typing import TYPE_CHECKING, Callable, Dict, Iterable, List, Union, Final
 
 from .segment import ControlCode, ControlType, Segment
 
 if TYPE_CHECKING:
     from .console import Console, ConsoleOptions, RenderResult
 
-STRIP_CONTROL_CODES = [
+STRIP_CONTROL_CODES: Final = [
+    7,  # Bell
     8,  # Backspace
     11,  # Vertical tab
     12,  # Form feed
     13,  # Carriage return
 ]
-_CONTROL_TRANSLATE = {_codepoint: None for _codepoint in STRIP_CONTROL_CODES}
+_CONTROL_STRIP_TRANSLATE: Final = {
+    _codepoint: None for _codepoint in STRIP_CONTROL_CODES
+}
 
+CONTROL_ESCAPE: Final = {
+    7: "\\a",
+    8: "\\b",
+    11: "\\v",
+    12: "\\f",
+    13: "\\r",
+}
 
-CONTROL_CODES_FORMAT: Dict[int, Callable] = {
+CONTROL_CODES_FORMAT: Dict[int, Callable[..., str]] = {
     ControlType.BELL: lambda: "\x07",
     ControlType.CARRIAGE_RETURN: lambda: "\r",
     ControlType.HOME: lambda: "\x1b[H",
@@ -27,9 +38,10 @@ CONTROL_CODES_FORMAT: Dict[int, Callable] = {
     ControlType.CURSOR_DOWN: lambda param: f"\x1b[{param}B",
     ControlType.CURSOR_FORWARD: lambda param: f"\x1b[{param}C",
     ControlType.CURSOR_BACKWARD: lambda param: f"\x1b[{param}D",
-    ControlType.CURSOR_MOVE_TO_ROW: lambda param: f"\x1b[{param+1}G",
+    ControlType.CURSOR_MOVE_TO_COLUMN: lambda param: f"\x1b[{param+1}G",
     ControlType.ERASE_IN_LINE: lambda param: f"\x1b[{param}K",
     ControlType.CURSOR_MOVE_TO: lambda x, y: f"\x1b[{y+1};{x+1}H",
+    ControlType.SET_WINDOW_TITLE: lambda title: f"\x1b]0;{title}\x07",
 }
 
 
@@ -93,8 +105,8 @@ class Control:
         return control
 
     @classmethod
-    def move_to_row(cls, x: int, y: int = 0) -> "Control":
-        """Move to the given row, optionally add offset to column.
+    def move_to_column(cls, x: int, y: int = 0) -> "Control":
+        """Move to the given column, optionally add offset to row.
 
         Returns:
             x (int): absolute x (column)
@@ -106,14 +118,14 @@ class Control:
 
         return (
             cls(
-                (ControlType.CURSOR_MOVE_TO_ROW, x + 1),
+                (ControlType.CURSOR_MOVE_TO_COLUMN, x),
                 (
                     ControlType.CURSOR_DOWN if y > 0 else ControlType.CURSOR_UP,
                     abs(y),
                 ),
             )
             if y
-            else cls((ControlType.CURSOR_MOVE_TO_ROW, x))
+            else cls((ControlType.CURSOR_MOVE_TO_COLUMN, x))
         )
 
     @classmethod
@@ -147,6 +159,15 @@ class Control:
         else:
             return cls(ControlType.DISABLE_ALT_SCREEN)
 
+    @classmethod
+    def title(cls, title: str) -> "Control":
+        """Set the terminal window title
+
+        Args:
+            title (str): The new terminal window title
+        """
+        return cls((ControlType.SET_WINDOW_TITLE, title))
+
     def __str__(self) -> str:
         return self.segment.text
 
@@ -157,7 +178,9 @@ class Control:
             yield self.segment
 
 
-def strip_control_codes(text: str, _translate_table=_CONTROL_TRANSLATE) -> str:
+def strip_control_codes(
+    text: str, _translate_table: Dict[int, None] = _CONTROL_STRIP_TRANSLATE
+) -> str:
     """Remove control codes from text.
 
     Args:
@@ -169,5 +192,28 @@ def strip_control_codes(text: str, _translate_table=_CONTROL_TRANSLATE) -> str:
     return text.translate(_translate_table)
 
 
+def escape_control_codes(
+    text: str,
+    _translate_table: Dict[int, str] = CONTROL_ESCAPE,
+) -> str:
+    """Replace control codes with their "escaped" equivalent in the given text.
+    (e.g. "\b" becomes "\\b")
+
+    Args:
+        text (str): A string possibly containing control codes.
+
+    Returns:
+        str: String with control codes replaced with their escaped version.
+    """
+    return text.translate(_translate_table)
+
+
 if __name__ == "__main__":  # pragma: no cover
-    print(strip_control_codes("hello\rWorld"))
+    from rich.console import Console
+
+    console = Console()
+    console.print("Look at the title of your terminal window ^")
+    # console.print(Control((ControlType.SET_WINDOW_TITLE, "Hello, world!")))
+    for i in range(10):
+        console.set_window_title("🚀 Loading" + "." * i)
+        time.sleep(0.5)

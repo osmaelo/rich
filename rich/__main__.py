@@ -4,7 +4,7 @@ from time import process_time
 
 from rich import box
 from rich.color import Color
-from rich.console import Console, ConsoleOptions, RenderGroup, RenderResult
+from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
 from rich.markdown import Markdown
 from rich.measure import Measurement
 from rich.pretty import Pretty
@@ -51,7 +51,6 @@ def make_test_card() -> Table:
         pad_edge=False,
     )
     color_table.add_row(
-        # "[bold yellow]256[/] colors or [bold green]16.7 million[/] colors [blue](if supported by your terminal)[/].",
         (
             "✓ [bold green]4-bit color[/]\n"
             "✓ [bold blue]8-bit color[/]\n"
@@ -80,7 +79,7 @@ def make_test_card() -> Table:
     )
     table.add_row(
         "Text",
-        RenderGroup(
+        Group(
             Text.from_markup(
                 """Word wrap text. Justify [green]left[/], [yellow]center[/], [blue]right[/] or [red]full[/].\n"""
             ),
@@ -88,7 +87,7 @@ def make_test_card() -> Table:
         ),
     )
 
-    def comparison(renderable1, renderable2) -> Table:
+    def comparison(renderable1: RenderableType, renderable2: RenderableType) -> Table:
         table = Table(show_header=False, pad_edge=False, box=None, expand=True)
         table.add_column("1", ratio=1)
         table.add_column("2", ratio=1)
@@ -101,7 +100,7 @@ def make_test_card() -> Table:
     )
 
     markup_example = (
-        "[bold magenta]Rich[/] supports a simple [i]bbcode[/i] like [b]markup[/b] for [yellow]color[/], [underline]style[/], and emoji! "
+        "[bold magenta]Rich[/] supports a simple [i]bbcode[/i]-like [b]markup[/b] for [yellow]color[/], [underline]style[/], and emoji! "
         ":+1: :apple: :ant: :bear: :baguette_bread: :bus: "
     )
     table.add_row("Markup", markup_example)
@@ -189,7 +188,7 @@ def iter_last(values: Iterable[T]) -> Iterable[Tuple[bool, T]]:
     markdown_example = """\
 # Markdown
 
-Supports much of the *markdown*, __syntax__!
+Supports much of the *markdown* __syntax__!
 
 - Headers
 - Basic formatting: **bold**, *italic*, `code`
@@ -208,6 +207,7 @@ Supports much of the *markdown*, __syntax__!
 
 
 if __name__ == "__main__":  # pragma: no cover
+    from rich.panel import Panel
 
     console = Console(
         file=io.StringIO(),
@@ -216,64 +216,30 @@ if __name__ == "__main__":  # pragma: no cover
     test_card = make_test_card()
 
     # Print once to warm cache
+    start = process_time()
     console.print(test_card)
+    pre_cache_taken = round((process_time() - start) * 1000.0, 1)
+
     console.file = io.StringIO()
 
     start = process_time()
     console.print(test_card)
     taken = round((process_time() - start) * 1000.0, 1)
 
-    text = console.file.getvalue()
-    # https://bugs.python.org/issue37871
-    for line in text.splitlines():
-        print(line)
-
-    print(f"rendered in {taken}ms")
-
-    from rich.panel import Panel
+    c = Console(record=True)
+    c.print(test_card)
 
     console = Console()
-
-    sponsor_message = Table.grid(padding=1)
-    sponsor_message.add_column(style="green", justify="right")
-    sponsor_message.add_column(no_wrap=True)
-    sponsor_message.add_row(
-        "Sponsor me",
-        "[u blue link=https://github.com/sponsors/willmcgugan]https://github.com/sponsors/willmcgugan",
-    )
-    sponsor_message.add_row(
-        "Buy me a :coffee:",
-        "[u blue link=https://ko-fi.com/willmcgugan]https://ko-fi.com/willmcgugan",
-    )
-    sponsor_message.add_row(
-        "Twitter",
-        "[u blue link=https://twitter.com/willmcgugan]https://twitter.com/willmcgugan",
-    )
-    sponsor_message.add_row(
-        "Blog", "[u blue link=https://www.willmcgugan.com]https://www.willmcgugan.com"
-    )
-
-    intro_message = Text.from_markup(
-        """\
-It takes a lot of time to develop Rich and to provide support.
-
-Consider supporting my work via Github Sponsors (ask your company / organization), or buy me a coffee to say thanks.
-
-- Will McGugan"""
-    )
-
-    message = Table.grid(padding=2)
-    message.add_column()
-    message.add_column(no_wrap=True)
-    message.add_row(intro_message, sponsor_message)
-
+    console.print(f"[dim]rendered in [not dim]{pre_cache_taken}ms[/] (cold cache)")
+    console.print(f"[dim]rendered in [not dim]{taken}ms[/] (warm cache)")
+    console.print()
     console.print(
-        Panel.fit(
-            message,
-            box=box.ROUNDED,
+        Panel(
+            "[b magenta]Hope you enjoy using Rich![/]\n\n"
+            "Consider sponsoring to ensure this project is maintained.\n\n"
+            "[cyan]https://github.com/sponsors/willmcgugan[/cyan]",
+            border_style="green",
+            title="Help ensure Rich is maintained",
             padding=(1, 2),
-            title="[b red]Thanks for trying out Rich!",
-            border_style="bright_blue",
-        ),
-        justify="center",
+        )
     )

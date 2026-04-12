@@ -1,7 +1,6 @@
 from fractions import Fraction
-from math import ceil, floor, modf
-from typing import cast, List, Optional, Sequence
-from typing_extensions import Protocol
+from math import ceil
+from typing import cast, List, Optional, Sequence, Protocol
 
 
 class Edge(Protocol):
@@ -106,7 +105,7 @@ def ratio_reduce(
 
 
 def ratio_distribute(
-    total: int, ratios: List[int], minimums: List[int] = None
+    total: int, ratios: List[int], minimums: Optional[List[int]] = None
 ) -> List[int]:
     """Distribute an integer total in to parts based on ratios.
 
@@ -141,12 +140,11 @@ def ratio_distribute(
     return distributed_total
 
 
-if __name__ == "__main__":  # type: ignore
+if __name__ == "__main__":
     from dataclasses import dataclass
 
     @dataclass
     class E:
-
         size: Optional[int] = None
         ratio: int = 1
         minimum_size: int = 1

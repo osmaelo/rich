@@ -39,7 +39,9 @@ DEFAULT_STYLES: Dict[str, Style] = {
     "inspect.attr": Style(color="yellow", italic=True),
     "inspect.attr.dunder": Style(color="yellow", italic=True, dim=True),
     "inspect.callable": Style(bold=True, color="red"),
+    "inspect.async_def": Style(italic=True, color="bright_cyan"),
     "inspect.def": Style(italic=True, color="bright_cyan"),
+    "inspect.class": Style(italic=True, color="bright_cyan"),
     "inspect.error": Style(bold=True, color="red"),
     "inspect.equals": Style(),
     "inspect.help": Style(color="cyan"),
@@ -52,7 +54,7 @@ DEFAULT_STYLES: Dict[str, Style] = {
     "logging.level.notset": Style(dim=True),
     "logging.level.debug": Style(color="green"),
     "logging.level.info": Style(color="blue"),
-    "logging.level.warning": Style(color="red"),
+    "logging.level.warning": Style(color="yellow"),
     "logging.level.error": Style(color="red", bold=True),
     "logging.level.critical": Style(color="red", bold=True, reverse=True),
     "log.level": Style.null(),
@@ -77,16 +79,24 @@ DEFAULT_STYLES: Dict[str, Style] = {
     "repr.attrib_equal": Style(bold=True),
     "repr.attrib_value": Style(color="magenta", italic=False),
     "repr.number": Style(color="cyan", bold=True, italic=False),
+    "repr.number_complex": Style(color="cyan", bold=True, italic=False),  # same
     "repr.bool_true": Style(color="bright_green", italic=True),
     "repr.bool_false": Style(color="bright_red", italic=True),
     "repr.none": Style(color="magenta", italic=True),
     "repr.url": Style(underline=True, color="bright_blue", italic=False, bold=False),
     "repr.uuid": Style(color="bright_yellow", bold=False),
-    "repr.call": Style(color="bright_magenta"),
+    "repr.call": Style(color="magenta", bold=True),
     "repr.path": Style(color="magenta"),
     "repr.filename": Style(color="bright_magenta"),
     "rule.line": Style(color="bright_green"),
     "rule.text": Style.null(),
+    "json.brace": Style(bold=True),
+    "json.bool_true": Style(color="bright_green", italic=True),
+    "json.bool_false": Style(color="bright_red", italic=True),
+    "json.null": Style(color="magenta", italic=True),
+    "json.number": Style(color="cyan", bold=True, italic=False),
+    "json.str": Style(color="green", italic=False, bold=False),
+    "json.key": Style(color="blue", bold=True),
     "prompt": Style.null(),
     "prompt.choices": Style(color="magenta", bold=True),
     "prompt.default": Style(color="cyan", bold=True),
@@ -110,6 +120,9 @@ DEFAULT_STYLES: Dict[str, Style] = {
     "traceback.exc_type": Style(color="bright_red", bold=True),
     "traceback.exc_value": Style.null(),
     "traceback.offset": Style(color="bright_red", bold=True),
+    "traceback.error_range": Style(underline=True, bold=True),
+    "traceback.note": Style(color="green", bold=True),
+    "traceback.group.border": Style(color="magenta"),
     "bar.back": Style(color="grey23"),
     "bar.complete": Style(color="rgb(249,38,114)"),
     "bar.finished": Style(color="rgb(114,156,31)"),
@@ -126,32 +139,58 @@ DEFAULT_STYLES: Dict[str, Style] = {
     "status.spinner": Style(color="green"),
     "tree": Style(),
     "tree.line": Style(),
-}
-
-MARKDOWN_STYLES = {
     "markdown.paragraph": Style(),
     "markdown.text": Style(),
-    "markdown.emph": Style(italic=True),
+    "markdown.em": Style(italic=True),
+    "markdown.emph": Style(italic=True),  # For commonmark backwards compatibility
     "markdown.strong": Style(bold=True),
-    "markdown.code": Style(bgcolor="black", color="bright_white"),
-    "markdown.code_block": Style(dim=True, color="cyan", bgcolor="black"),
+    "markdown.code": Style(bold=True, color="cyan", bgcolor="black"),
+    "markdown.code_block": Style(color="cyan", bgcolor="black"),
     "markdown.block_quote": Style(color="magenta"),
     "markdown.list": Style(color="cyan"),
     "markdown.item": Style(),
-    "markdown.item.bullet": Style(color="yellow", bold=True),
-    "markdown.item.number": Style(color="yellow", bold=True),
-    "markdown.hr": Style(color="yellow"),
+    "markdown.item.bullet": Style(bold=True),
+    "markdown.item.number": Style(color="cyan"),
+    "markdown.hr": Style(dim=True),
     "markdown.h1.border": Style(),
-    "markdown.h1": Style(bold=True),
-    "markdown.h2": Style(bold=True, underline=True),
-    "markdown.h3": Style(bold=True),
-    "markdown.h4": Style(bold=True, dim=True),
-    "markdown.h5": Style(underline=True),
-    "markdown.h6": Style(italic=True),
+    "markdown.h1": Style(bold=True, underline=True),
+    "markdown.h2": Style(color="magenta", underline=True),
+    "markdown.h3": Style(color="magenta", bold=True),
+    "markdown.h4": Style(color="magenta", italic=True),
+    "markdown.h5": Style(italic=True),
+    "markdown.h6": Style(dim=True),
     "markdown.h7": Style(italic=True, dim=True),
     "markdown.link": Style(color="bright_blue"),
-    "markdown.link_url": Style(color="blue"),
+    "markdown.link_url": Style(color="blue", underline=True),
+    "markdown.s": Style(strike=True),
+    "markdown.table.border": Style(color="cyan"),
+    "markdown.table.header": Style(color="cyan", bold=False),
+    "markdown.kbd": Style(bold=True, color="bright_yellow"),
+    "iso8601.date": Style(color="blue"),
+    "iso8601.time": Style(color="magenta"),
+    "iso8601.timezone": Style(color="yellow"),
 }
 
 
-DEFAULT_STYLES.update(MARKDOWN_STYLES)
+if __name__ == "__main__":  # pragma: no cover
+    import argparse
+    import io
+
+    from rich.console import Console
+    from rich.table import Table
+    from rich.text import Text
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--html", action="store_true", help="Export as HTML table")
+    args = parser.parse_args()
+    html: bool = args.html
+    console = Console(record=True, width=70, file=io.StringIO()) if html else Console()
+
+    table = Table("Name", "Styling")
+
+    for style_name, style in DEFAULT_STYLES.items():
+        table.add_row(Text(style_name, style=style), str(style))
+
+    console.print(table)
+    if html:
+        print(console.export_html(inline_styles=True))

@@ -7,7 +7,9 @@ assignees: ''
 
 ---
 
-Consider posting in https://github.com/willmcgugan/rich/discussions for feedback before raising a feature request.
+NOTE: If a feature could be implemented in a third-party library, then it is unlikely to be accepted as part of the core library.
+
+NOTE: Feature requests will not be considered unless first approved in discussions (https://github.com/textualize/rich/discussions)
 
 Have you checked the issues for a similar suggestions?
 
@@ -15,10 +17,6 @@ Have you checked the issues for a similar suggestions?
 
 Give as much detail as you can. Example code of how you would like it to work would help.
 
-**What problem does it solved for you?**
+**What problem does it solve for you?**
 
 What problem do you have that this feature would solve? I may be able to suggest an existing way of solving it.
-
-**Did I help**
-
-If I was able to resolve your problem, consider [sponsoring](https://github.com/sponsors/willmcgugan) my work on Rich, or [buy me a coffee](https://ko-fi.com/willmcgugan) to say thanks.

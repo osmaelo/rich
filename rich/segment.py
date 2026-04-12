@@ -1,13 +1,32 @@
 from enum import IntEnum
-
-from typing import Dict, NamedTuple, Optional
-
-from .cells import cell_len, set_cell_size
-from .style import Style
-
+from functools import lru_cache
 from itertools import filterfalse
 from operator import attrgetter
-from typing import Iterable, List, Sequence, Union, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Dict,
+    Iterable,
+    List,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
+
+from .cells import (
+    _is_single_cell_widths,
+    cached_cell_len,
+    cell_len,
+    get_character_cell_size,
+    set_cell_size,
+)
+from .repr import Result, rich_repr
+from .style import Style
+
+if TYPE_CHECKING:
+    from .console import Console, ConsoleOptions, RenderResult
 
 
 class ControlType(IntEnum):
@@ -25,16 +44,20 @@ class ControlType(IntEnum):
     CURSOR_DOWN = 10
     CURSOR_FORWARD = 11
     CURSOR_BACKWARD = 12
-    CURSOR_MOVE_TO_ROW = 13
+    CURSOR_MOVE_TO_COLUMN = 13
     CURSOR_MOVE_TO = 14
     ERASE_IN_LINE = 15
+    SET_WINDOW_TITLE = 16
 
 
 ControlCode = Union[
-    Tuple[ControlType], Tuple[ControlType, int], Tuple[ControlType, int, int]
+    Tuple[ControlType],
+    Tuple[ControlType, Union[int, str]],
+    Tuple[ControlType, int, int],
 ]
 
 
+@rich_repr()
 class Segment(NamedTuple):
     """A piece of text with associated style. Segments are produced by the Console render process and
     are ultimately converted in to strings to be written to the terminal.
@@ -42,36 +65,118 @@ class Segment(NamedTuple):
     Args:
         text (str): A piece of text.
         style (:class:`~rich.style.Style`, optional): An optional style to apply to the text.
-        control (Tuple[ControlCode..], optional): Optional sequence of control codes.
+        control (Tuple[ControlCode], optional): Optional sequence of control codes.
+
+    Attributes:
+        cell_length (int): The cell length of this Segment.
     """
 
-    text: str = ""
-    """Raw text."""
+    text: str
     style: Optional[Style] = None
-    """An optional style."""
     control: Optional[Sequence[ControlCode]] = None
-    """Optional sequence of control codes."""
 
-    def __repr__(self) -> str:
-        """Simplified repr."""
-        if self.control:
-            return f"Segment({self.text!r}, {self.style!r}, {self.control!r})"
+    @property
+    def cell_length(self) -> int:
+        """The number of terminal cells required to display self.text.
+
+        Returns:
+            int: A number of cells.
+        """
+        text, _style, control = self
+        return 0 if control else cell_len(text)
+
+    def __rich_repr__(self) -> Result:
+        yield self.text
+        if self.control is None:
+            if self.style is not None:
+                yield self.style
         else:
-            return f"Segment({self.text!r}, {self.style!r})"
+            yield self.style
+            yield self.control
 
     def __bool__(self) -> bool:
         """Check if the segment contains text."""
         return bool(self.text)
 
     @property
-    def cell_length(self) -> int:
-        """Get cell length of segment."""
-        return 0 if self.control else cell_len(self.text)
-
-    @property
     def is_control(self) -> bool:
         """Check if the segment contains control codes."""
         return self.control is not None
+
+    @classmethod
+    @lru_cache(1024 * 16)
+    def _split_cells(cls, segment: "Segment", cut: int) -> Tuple["Segment", "Segment"]:
+        """Split a segment in to two at a given cell position.
+
+        Note that splitting a double-width character, may result in that character turning
+        into two spaces.
+
+        Args:
+            segment (Segment): A segment to split.
+            cut (int): A cell position to cut on.
+
+        Returns:
+            A tuple of two segments.
+        """
+        text, style, control = segment
+        _Segment = Segment
+        cell_length = segment.cell_length
+        if cut >= cell_length:
+            return segment, _Segment("", style, control)
+
+        cell_size = get_character_cell_size
+
+        pos = int((cut / cell_length) * len(text))
+
+        while True:
+            before = text[:pos]
+            cell_pos = cell_len(before)
+            out_by = cell_pos - cut
+            if not out_by:
+                return (
+                    _Segment(before, style, control),
+                    _Segment(text[pos:], style, control),
+                )
+            if out_by == -1 and cell_size(text[pos]) == 2:
+                return (
+                    _Segment(text[:pos] + " ", style, control),
+                    _Segment(" " + text[pos + 1 :], style, control),
+                )
+            if out_by == +1 and cell_size(text[pos - 1]) == 2:
+                return (
+                    _Segment(text[: pos - 1] + " ", style, control),
+                    _Segment(" " + text[pos:], style, control),
+                )
+            if cell_pos < cut:
+                pos += 1
+            else:
+                pos -= 1
+
+    def split_cells(self, cut: int) -> Tuple["Segment", "Segment"]:
+        """Split segment in to two segments at the specified column.
+
+        If the cut point falls in the middle of a 2-cell wide character then it is replaced
+        by two spaces, to preserve the display width of the parent segment.
+
+        Args:
+            cut (int): Offset within the segment to cut.
+
+        Returns:
+            Tuple[Segment, Segment]: Two segments.
+        """
+        text, style, control = self
+        assert cut >= 0
+
+        if _is_single_cell_widths(text):
+            # Fast path with all 1 cell characters
+            if cut >= len(text):
+                return self, Segment("", style, control)
+            return (
+                Segment(text[:cut], style, control),
+                Segment(text[cut:], style, control),
+            )
+
+        return self._split_cells(self, cut)
 
     @classmethod
     def line(cls) -> "Segment":
@@ -82,8 +187,8 @@ class Segment(NamedTuple):
     def apply_style(
         cls,
         segments: Iterable["Segment"],
-        style: Style = None,
-        post_style: Style = None,
+        style: Optional[Style] = None,
+        post_style: Optional[Style] = None,
     ) -> Iterable["Segment"]:
         """Apply style(s) to an iterable of segments.
 
@@ -97,28 +202,31 @@ class Segment(NamedTuple):
         Returns:
             Iterable[Segments]: A new iterable of segments (possibly the same iterable).
         """
+        result_segments = segments
         if style:
             apply = style.__add__
-            segments = (
+            result_segments = (
                 cls(text, None if control else apply(_style), control)
-                for text, _style, control in segments
+                for text, _style, control in result_segments
             )
         if post_style:
-            segments = (
+            result_segments = (
                 cls(
                     text,
-                    None
-                    if control
-                    else (_style + post_style if _style else post_style),
+                    (
+                        None
+                        if control
+                        else (_style + post_style if _style else post_style)
+                    ),
                     control,
                 )
-                for text, _style, control in segments
+                for text, _style, control in result_segments
             )
-        return segments
+        return result_segments
 
     @classmethod
     def filter_control(
-        cls, segments: Iterable["Segment"], is_control=False
+        cls, segments: Iterable["Segment"], is_control: bool = False
     ) -> Iterable["Segment"]:
         """Filter segments by ``is_control`` attribute.
 
@@ -165,11 +273,42 @@ class Segment(NamedTuple):
             yield line
 
     @classmethod
+    def split_lines_terminator(
+        cls, segments: Iterable["Segment"]
+    ) -> Iterable[Tuple[List["Segment"], bool]]:
+        """Split a sequence of segments in to a list of lines and a boolean to indicate if there was a new line.
+
+        Args:
+            segments (Iterable[Segment]): Segments potentially containing line feeds.
+
+        Yields:
+            Iterable[List[Segment]]: Iterable of segment lists, one per line.
+        """
+        line: List[Segment] = []
+        append = line.append
+
+        for segment in segments:
+            if "\n" in segment.text and not segment.control:
+                text, style, _ = segment
+                while text:
+                    _text, new_line, text = text.partition("\n")
+                    if _text:
+                        append(cls(_text, style))
+                    if new_line:
+                        yield (line, True)
+                        line = []
+                        append = line.append
+            else:
+                append(segment)
+        if line:
+            yield (line, False)
+
+    @classmethod
     def split_and_crop_lines(
         cls,
         segments: Iterable["Segment"],
         length: int,
-        style: Style = None,
+        style: Optional[Style] = None,
         pad: bool = True,
         include_new_lines: bool = True,
     ) -> Iterable[List["Segment"]]:
@@ -193,11 +332,11 @@ class Segment(NamedTuple):
 
         for segment in segments:
             if "\n" in segment.text and not segment.control:
-                text, style, _ = segment
+                text, segment_style, _ = segment
                 while text:
                     _text, new_line, text = text.partition("\n")
                     if _text:
-                        append(cls(_text, style))
+                        append(cls(_text, segment_style))
                     if new_line:
                         cropped_line = adjust_line_length(
                             line, length, style=style, pad=pad
@@ -205,7 +344,7 @@ class Segment(NamedTuple):
                         if include_new_lines:
                             cropped_line.append(new_line_segment)
                         yield cropped_line
-                        del line[:]
+                        line.clear()
             else:
                 append(segment)
         if line:
@@ -213,7 +352,11 @@ class Segment(NamedTuple):
 
     @classmethod
     def adjust_line_length(
-        cls, line: List["Segment"], length: int, style: Style = None, pad: bool = True
+        cls,
+        line: List["Segment"],
+        length: int,
+        style: Optional[Style] = None,
+        pad: bool = True,
     ) -> List["Segment"]:
         """Adjust a line to a given width (cropping or padding as required).
 
@@ -262,7 +405,8 @@ class Segment(NamedTuple):
         Returns:
             int: The length of the line.
         """
-        return sum(segment.cell_length for segment in line)
+        _cell_len = cell_len
+        return sum(_cell_len(text) for text, style, control in line if not control)
 
     @classmethod
     def get_shape(cls, lines: List[List["Segment"]]) -> Tuple[int, int]:
@@ -283,8 +427,8 @@ class Segment(NamedTuple):
         cls,
         lines: List[List["Segment"]],
         width: int,
-        height: int = None,
-        style: Style = None,
+        height: Optional[int] = None,
+        style: Optional[Style] = None,
         new_lines: bool = False,
     ) -> List[List["Segment"]]:
         """Set the shape of a list of lines (enclosing rectangle).
@@ -293,32 +437,115 @@ class Segment(NamedTuple):
             lines (List[List[Segment]]): A list of lines.
             width (int): Desired width.
             height (int, optional): Desired height or None for no change.
-            style (Style, optional): Style of any padding added. Defaults to None.
+            style (Style, optional): Style of any padding added.
             new_lines (bool, optional): Padded lines should include "\n". Defaults to False.
 
         Returns:
-            List[List[Segment]]: New list of lines that fits width x height.
+            List[List[Segment]]: New list of lines.
         """
-        if height is None:
-            height = len(lines)
-        shaped_lines: List[List[Segment]] = []
-        pad_line = (
-            [Segment(" " * width, style), Segment("\n")]
-            if new_lines
-            else [Segment(" " * width, style)]
+        _height = height or len(lines)
+
+        blank = (
+            [cls(" " * width + "\n", style)] if new_lines else [cls(" " * width, style)]
         )
 
-        append = shaped_lines.append
         adjust_line_length = cls.adjust_line_length
-        line: Optional[List[Segment]]
-        iter_lines = iter(lines)
-        for _ in range(height):
-            line = next(iter_lines, None)
-            if line is None:
-                append(pad_line)
-            else:
-                append(adjust_line_length(line, width, style=style))
+        shaped_lines = lines[:_height]
+        shaped_lines[:] = [
+            adjust_line_length(line, width, style=style) for line in lines
+        ]
+        if len(shaped_lines) < _height:
+            shaped_lines.extend([blank] * (_height - len(shaped_lines)))
         return shaped_lines
+
+    @classmethod
+    def align_top(
+        cls: Type["Segment"],
+        lines: List[List["Segment"]],
+        width: int,
+        height: int,
+        style: Style,
+        new_lines: bool = False,
+    ) -> List[List["Segment"]]:
+        """Aligns lines to top (adds extra lines to bottom as required).
+
+        Args:
+            lines (List[List[Segment]]): A list of lines.
+            width (int): Desired width.
+            height (int, optional): Desired height or None for no change.
+            style (Style): Style of any padding added.
+            new_lines (bool, optional): Padded lines should include "\n". Defaults to False.
+
+        Returns:
+            List[List[Segment]]: New list of lines.
+        """
+        extra_lines = height - len(lines)
+        if not extra_lines:
+            return lines[:]
+        lines = lines[:height]
+        blank = cls(" " * width + "\n", style) if new_lines else cls(" " * width, style)
+        lines = lines + [[blank]] * extra_lines
+        return lines
+
+    @classmethod
+    def align_bottom(
+        cls: Type["Segment"],
+        lines: List[List["Segment"]],
+        width: int,
+        height: int,
+        style: Style,
+        new_lines: bool = False,
+    ) -> List[List["Segment"]]:
+        """Aligns render to bottom (adds extra lines above as required).
+
+        Args:
+            lines (List[List[Segment]]): A list of lines.
+            width (int): Desired width.
+            height (int, optional): Desired height or None for no change.
+            style (Style): Style of any padding added. Defaults to None.
+            new_lines (bool, optional): Padded lines should include "\n". Defaults to False.
+
+        Returns:
+            List[List[Segment]]: New list of lines.
+        """
+        extra_lines = height - len(lines)
+        if not extra_lines:
+            return lines[:]
+        lines = lines[:height]
+        blank = cls(" " * width + "\n", style) if new_lines else cls(" " * width, style)
+        lines = [[blank]] * extra_lines + lines
+        return lines
+
+    @classmethod
+    def align_middle(
+        cls: Type["Segment"],
+        lines: List[List["Segment"]],
+        width: int,
+        height: int,
+        style: Style,
+        new_lines: bool = False,
+    ) -> List[List["Segment"]]:
+        """Aligns lines to middle (adds extra lines to above and below as required).
+
+        Args:
+            lines (List[List[Segment]]): A list of lines.
+            width (int): Desired width.
+            height (int, optional): Desired height or None for no change.
+            style (Style): Style of any padding added.
+            new_lines (bool, optional): Padded lines should include "\n". Defaults to False.
+
+        Returns:
+            List[List[Segment]]: New list of lines.
+        """
+        extra_lines = height - len(lines)
+        if not extra_lines:
+            return lines[:]
+        lines = lines[:height]
+        blank = cls(" " * width + "\n", style) if new_lines else cls(" " * width, style)
+        top_lines = extra_lines // 2
+        bottom_lines = extra_lines - top_lines
+        lines = [[blank]] * top_lines + lines + [[blank]] * bottom_lines
+        return lines
 
     @classmethod
     def simplify(cls, segments: Iterable["Segment"]) -> Iterable["Segment"]:
@@ -399,11 +626,130 @@ class Segment(NamedTuple):
             else:
                 yield cls(text, None, control)
 
+    @classmethod
+    def divide(
+        cls, segments: Iterable["Segment"], cuts: Iterable[int]
+    ) -> Iterable[List["Segment"]]:
+        """Divides an iterable of segments in to portions.
+
+        Args:
+            cuts (Iterable[int]): Cell positions where to divide.
+
+        Yields:
+            [Iterable[List[Segment]]]: An iterable of Segments in List.
+        """
+        split_segments: List["Segment"] = []
+        add_segment = split_segments.append
+
+        iter_cuts = iter(cuts)
+
+        while True:
+            cut = next(iter_cuts, -1)
+            if cut == -1:
+                return
+            if cut != 0:
+                break
+            yield []
+        pos = 0
+
+        segments_clear = split_segments.clear
+        segments_copy = split_segments.copy
+
+        _cell_len = cached_cell_len
+        for segment in segments:
+            text, _style, control = segment
+            while text:
+                end_pos = pos if control else pos + _cell_len(text)
+                if end_pos < cut:
+                    add_segment(segment)
+                    pos = end_pos
+                    break
+
+                if end_pos == cut:
+                    add_segment(segment)
+                    yield segments_copy()
+                    segments_clear()
+                    pos = end_pos
+
+                    cut = next(iter_cuts, -1)
+                    if cut == -1:
+                        if split_segments:
+                            yield segments_copy()
+                        return
+
+                    break
+
+                else:
+                    before, segment = segment.split_cells(cut - pos)
+                    text, _style, control = segment
+                    add_segment(before)
+                    yield segments_copy()
+                    segments_clear()
+                    pos = cut
+
+                cut = next(iter_cuts, -1)
+                if cut == -1:
+                    if split_segments:
+                        yield segments_copy()
+                    return
+
+        yield segments_copy()
+
+
+class Segments:
+    """A simple renderable to render an iterable of segments. This class may be useful if
+    you want to print segments outside of a __rich_console__ method.
+
+    Args:
+        segments (Iterable[Segment]): An iterable of segments.
+        new_lines (bool, optional): Add new lines between segments. Defaults to False.
+    """
+
+    def __init__(self, segments: Iterable[Segment], new_lines: bool = False) -> None:
+        self.segments = list(segments)
+        self.new_lines = new_lines
+
+    def __rich_console__(
+        self, console: "Console", options: "ConsoleOptions"
+    ) -> "RenderResult":
+        if self.new_lines:
+            line = Segment.line()
+            for segment in self.segments:
+                yield segment
+                yield line
+        else:
+            yield from self.segments
+
+
+class SegmentLines:
+    def __init__(self, lines: Iterable[List[Segment]], new_lines: bool = False) -> None:
+        """A simple renderable containing a number of lines of segments. May be used as an intermediate
+        in rendering process.
+
+        Args:
+            lines (Iterable[List[Segment]]): Lists of segments forming lines.
+            new_lines (bool, optional): Insert new lines after each line. Defaults to False.
+        """
+        self.lines = list(lines)
+        self.new_lines = new_lines
+
+    def __rich_console__(
+        self, console: "Console", options: "ConsoleOptions"
+    ) -> "RenderResult":
+        if self.new_lines:
+            new_line = Segment.line()
+            for line in self.lines:
+                yield from line
+                yield new_line
+        else:
+            for line in self.lines:
+                yield from line
+
 
 if __name__ == "__main__":  # pragma: no cover
+    from rich.console import Console
     from rich.syntax import Syntax
     from rich.text import Text
-    from rich.console import Console
 
     code = """from rich.console import Console
 console = Console()
@@ -422,7 +768,7 @@ console.print(text)"""
     console.print(Syntax(code, "python", line_numbers=True))
     console.print()
     console.print(
-        "When you call [b]print()[/b], Rich [i]renders[/i] the object in to the the following:\n"
+        "When you call [b]print()[/b], Rich [i]renders[/i] the object in to the following:\n"
     )
     fragments = list(console.render(text))
     console.print(fragments)

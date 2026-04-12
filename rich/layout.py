@@ -20,8 +20,8 @@ from .console import Console, ConsoleOptions, RenderableType, RenderResult
 from .highlighter import ReprHighlighter
 from .panel import Panel
 from .pretty import Pretty
-from .repr import rich_repr, RichReprResult
 from .region import Region
+from .repr import Result, rich_repr
 from .segment import Segment
 from .style import StyleType
 
@@ -73,6 +73,7 @@ class _Placeholder:
             style=self.style,
             title=self.highlighter(title),
             border_style="blue",
+            height=height,
         )
 
 
@@ -154,14 +155,13 @@ class Layout:
 
     def __init__(
         self,
-        renderable: RenderableType = None,
+        renderable: Optional[RenderableType] = None,
         *,
-        name: str = None,
-        size: int = None,
+        name: Optional[str] = None,
+        size: Optional[int] = None,
         minimum_size: int = 1,
         ratio: int = 1,
         visible: bool = True,
-        height: int = None,
     ) -> None:
         self._renderable = renderable or _Placeholder(self)
         self.size = size
@@ -169,13 +169,12 @@ class Layout:
         self.ratio = ratio
         self.name = name
         self.visible = visible
-        self.height = height
         self.splitter: Splitter = self.splitters["column"]()
         self._children: List[Layout] = []
         self._render_map: RenderMap = {}
         self._lock = RLock()
 
-    def __rich_repr__(self) -> RichReprResult:
+    def __rich_repr__(self) -> Result:
         yield "name", self.name, None
         yield "size", self.size, None
         yield "minimum_size", self.minimum_size, 1
@@ -190,6 +189,11 @@ class Layout:
     def children(self) -> List["Layout"]:
         """Gets (visible) layout children."""
         return [child for child in self._children if child.visible]
+
+    @property
+    def map(self) -> RenderMap:
+        """Get a map of the last render."""
+        return self._render_map
 
     def get(self, name: str) -> Optional["Layout"]:
         """Get a named layout, or None if it doesn't exist.
@@ -222,8 +226,7 @@ class Layout:
         from rich.table import Table
         from rich.tree import Tree
 
-        def summary(layout) -> Table:
-
+        def summary(layout: "Layout") -> Table:
             icon = layout.splitter.get_tree_icon()
 
             table = Table.grid(padding=(0, 1, 0, 0))
@@ -294,7 +297,7 @@ class Layout:
         self._children.extend(_layouts)
 
     def split_row(self, *layouts: Union["Layout", RenderableType]) -> None:
-        """Split the layout in tow a row (Layouts side by side).
+        """Split the layout in to a row (layouts side by side).
 
         Args:
             *layouts (Layout): Positional arguments should be (sub) Layout instances.
@@ -399,7 +402,7 @@ class Layout:
             self._render_map = render_map
             layout_lines: List[List[Segment]] = [[] for _ in range(height)]
             _islice = islice
-            for (region, lines) in render_map.values():
+            for region, lines in render_map.values():
                 _x, y, _layout_width, layout_height = region
                 for row, line in zip(
                     _islice(layout_lines, y, y + layout_height), lines
@@ -412,9 +415,8 @@ class Layout:
                 yield new_line
 
 
-if __name__ == "__main__":  # type: ignore
+if __name__ == "__main__":
     from rich.console import Console
-    from rich.panel import Panel
 
     console = Console()
     layout = Layout()

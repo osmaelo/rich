@@ -1,10 +1,14 @@
-from rich.segment import ControlType
-from rich.segment import Segment
+from io import StringIO
+
+import pytest
+
+from rich.cells import cell_len
+from rich.segment import ControlType, Segment, SegmentLines, Segments
 from rich.style import Style
 
 
 def test_repr():
-    assert repr(Segment("foo")) == "Segment('foo', None)"
+    assert repr(Segment("foo")) == "Segment('foo')"
     home = (ControlType.HOME, 0)
     assert (
         repr(Segment("foo", None, [home]))
@@ -28,6 +32,21 @@ def test_apply_style():
 def test_split_lines():
     lines = [Segment("Hello\nWorld")]
     assert list(Segment.split_lines(lines)) == [[Segment("Hello")], [Segment("World")]]
+
+
+def test_split_lines_terminator():
+    lines = [Segment("Hello\nWorld")]
+    assert list(Segment.split_lines_terminator(lines)) == [
+        ([Segment("Hello")], True),
+        ([Segment("World")], False),
+    ]
+
+
+def test_split_lines_terminator_single_line():
+    lines = [Segment("Hello")]
+    assert list(Segment.split_lines_terminator(lines)) == [
+        ([Segment("Hello")], False),
+    ]
 
 
 def test_split_and_crop_lines():
@@ -119,3 +138,258 @@ def test_is_control():
     assert Segment("foo", Style(bold=True)).is_control == False
     assert Segment("foo", Style(bold=True), []).is_control == True
     assert Segment("foo", Style(bold=True), [(ControlType.HOME, 0)]).is_control == True
+
+
+def test_segments_renderable():
+    segments = Segments([Segment("foo")])
+    assert list(segments.__rich_console__(None, None)) == [Segment("foo")]
+
+    segments = Segments([Segment("foo")], new_lines=True)
+    assert list(segments.__rich_console__(None, None)) == [
+        Segment("foo"),
+        Segment.line(),
+    ]
+
+
+def test_divide():
+    bold = Style(bold=True)
+    italic = Style(italic=True)
+    segments = [
+        Segment("Hello", bold),
+        Segment(" World!", italic),
+    ]
+
+    assert list(Segment.divide(segments, [])) == []
+    assert list(Segment.divide([], [1])) == [[]]
+
+    assert list(Segment.divide(segments, [1])) == [[Segment("H", bold)]]
+
+    assert list(Segment.divide(segments, [1, 2])) == [
+        [Segment("H", bold)],
+        [Segment("e", bold)],
+    ]
+
+    assert list(Segment.divide(segments, [1, 2, 12])) == [
+        [Segment("H", bold)],
+        [Segment("e", bold)],
+        [Segment("llo", bold), Segment(" World!", italic)],
+    ]
+
+    assert list(Segment.divide(segments, [4, 20])) == [
+        [Segment("Hell", bold)],
+        [Segment("o", bold), Segment(" World!", italic)],
+    ]
+
+
+# https://github.com/textualize/rich/issues/1755
+def test_divide_complex():
+    MAP = (
+        "[on orange4]          [on green]XX[on orange4]          \n"
+        "                        \n"
+        "                        \n"
+        "                        \n"
+        "              [bright_red on black]Y[on orange4]        \n"
+        "[on green]X[on orange4]                  [on green]X[on orange4]  \n"
+        " [on green]X[on orange4]                   [on green]X\n"
+        "[on orange4]                        \n"
+        "          [on green]XX[on orange4]          \n"
+    )
+    from rich.console import Console
+    from rich.text import Text
+
+    text = Text.from_markup(MAP)
+    console = Console(
+        color_system="truecolor", width=30, force_terminal=True, file=StringIO()
+    )
+    console.print(text)
+    result = console.file.getvalue()
+
+    print(repr(result))
+    expected = "\x1b[48;5;94m          \x1b[0m\x1b[42mXX\x1b[0m\x1b[48;5;94m          \x1b[0m\n\x1b[48;5;94m                        \x1b[0m\n\x1b[48;5;94m                        \x1b[0m\n\x1b[48;5;94m                        \x1b[0m\n\x1b[48;5;94m              \x1b[0m\x1b[91;40mY\x1b[0m\x1b[91;48;5;94m        \x1b[0m\n\x1b[91;42mX\x1b[0m\x1b[91;48;5;94m                  \x1b[0m\x1b[91;42mX\x1b[0m\x1b[91;48;5;94m  \x1b[0m\n\x1b[91;48;5;94m \x1b[0m\x1b[91;42mX\x1b[0m\x1b[91;48;5;94m                   \x1b[0m\x1b[91;42mX\x1b[0m\n\x1b[91;48;5;94m                        \x1b[0m\n\x1b[91;48;5;94m          \x1b[0m\x1b[91;42mXX\x1b[0m\x1b[91;48;5;94m          \x1b[0m\n\n"
+    assert result == expected
+
+
+def test_divide_emoji():
+    bold = Style(bold=True)
+    italic = Style(italic=True)
+    segments = [
+        Segment("Hello", bold),
+        Segment("💩💩💩", italic),
+    ]
+
+    assert list(Segment.divide(segments, [7])) == [
+        [Segment("Hello", bold), Segment("💩", italic)],
+    ]
+    assert list(Segment.divide(segments, [8])) == [
+        [Segment("Hello", bold), Segment("💩 ", italic)],
+    ]
+    assert list(Segment.divide(segments, [9])) == [
+        [Segment("Hello", bold), Segment("💩💩", italic)],
+    ]
+    assert list(Segment.divide(segments, [8, 11])) == [
+        [Segment("Hello", bold), Segment("💩 ", italic)],
+        [Segment(" 💩", italic)],
+    ]
+    assert list(Segment.divide(segments, [9, 11])) == [
+        [Segment("Hello", bold), Segment("💩💩", italic)],
+        [Segment("💩", italic)],
+    ]
+
+
+def test_divide_edge():
+    segments = [Segment("foo"), Segment("bar"), Segment("baz")]
+    result = list(Segment.divide(segments, [1, 3, 9]))
+    print(result)
+    assert result == [
+        [Segment("f")],
+        [Segment("oo")],
+        [Segment("bar"), Segment("baz")],
+    ]
+
+
+def test_divide_edge_2():
+    segments = [
+        Segment("╭─"),
+        Segment(
+            "────── Placeholder ───────",
+        ),
+        Segment(
+            "─╮",
+        ),
+    ]
+    result = list(Segment.divide(segments, [30, 60]))
+    expected = [segments, []]
+    print(repr(result))
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "text,split,result",
+    [
+        ("XX", 4, (Segment("XX"), Segment(""))),
+        ("X", 1, (Segment("X"), Segment(""))),
+        ("💩", 1, (Segment(" "), Segment(" "))),
+        ("XY", 1, (Segment("X"), Segment("Y"))),
+        ("💩X", 1, (Segment(" "), Segment(" X"))),
+        ("💩💩", 1, (Segment(" "), Segment(" 💩"))),
+        ("X💩Y", 2, (Segment("X "), Segment(" Y"))),
+        ("X💩YZ", 2, (Segment("X "), Segment(" YZ"))),
+        ("X💩💩Z", 2, (Segment("X "), Segment(" 💩Z"))),
+        ("X💩💩Z", 3, (Segment("X💩"), Segment("💩Z"))),
+        ("X💩💩Z", 4, (Segment("X💩 "), Segment(" Z"))),
+        ("X💩💩Z", 5, (Segment("X💩💩"), Segment("Z"))),
+        ("X💩💩Z", 6, (Segment("X💩💩Z"), Segment(""))),
+        ("XYZABC💩💩", 6, (Segment("XYZABC"), Segment("💩💩"))),
+        ("XYZABC💩💩", 7, (Segment("XYZABC "), Segment(" 💩"))),
+        ("XYZABC💩💩", 8, (Segment("XYZABC💩"), Segment("💩"))),
+        ("XYZABC💩💩", 9, (Segment("XYZABC💩 "), Segment(" "))),
+        ("XYZABC💩💩", 10, (Segment("XYZABC💩💩"), Segment(""))),
+        ("💩💩💩💩💩", 3, (Segment("💩 "), Segment(" 💩💩💩"))),
+        ("💩💩💩💩💩", 4, (Segment("💩💩"), Segment("💩💩💩"))),
+        ("💩X💩Y💩Z💩A💩", 4, (Segment("💩X "), Segment(" Y💩Z💩A💩"))),
+        ("XYZABC", 4, (Segment("XYZA"), Segment("BC"))),
+        ("XYZABC", 5, (Segment("XYZAB"), Segment("C"))),
+        (
+            "a1あ１１bcdaef",
+            9,
+            (Segment("a1あ１１b"), Segment("cdaef")),
+        ),
+    ],
+)
+def test_split_cells_emoji(text, split, result):
+    assert Segment(text).split_cells(split) == result
+
+
+@pytest.mark.parametrize(
+    "segment",
+    [
+        Segment("早乙女リリエル (CV: 徳井青）"),
+        Segment("メイド・イン・きゅんクチュアリ☆    "),
+        Segment("TVアニメ「メルクストーリア -無気力少年と瓶の中の少女-」 主題歌CD"),
+        Segment("南無阿弥JKうらめしや?！     "),
+        Segment("メルク (CV: 水瀬いのり)     "),
+        Segment(" メルク (CV: 水瀬いのり)     "),
+        Segment("  メルク (CV: 水瀬いのり)     "),
+        Segment("  メルク (CV: 水瀬いのり)      "),
+    ],
+)
+def test_split_cells_mixed(segment: Segment) -> None:
+    """Check that split cells splits on cell positions."""
+    # Caused https://github.com/Textualize/textual/issues/4996 in Textual
+
+    for position in range(0, segment.cell_length + 1):
+        left, right = Segment.split_cells(segment, position)
+        assert all(
+            cell_len(c) > 0 for c in segment.text
+        )  # Sanity check there aren't any sneaky control codes
+        assert cell_len(left.text) == position
+        assert cell_len(right.text) == segment.cell_length - position
+
+
+def test_split_cells_doubles() -> None:
+    """Check that split cells splits on cell positions with all double width characters."""
+    test = Segment("早" * 20)
+    for position in range(1, test.cell_length):
+        left, right = Segment.split_cells(test, position)
+        assert cell_len(left.text) == position
+        assert cell_len(right.text) == test.cell_length - position
+
+
+def test_split_cells_single() -> None:
+    """Check that split cells splits on cell positions with all single width characters."""
+    test = Segment("A" * 20)
+    for position in range(1, test.cell_length):
+        left, right = Segment.split_cells(test, position)
+        assert cell_len(left.text) == position
+        assert cell_len(right.text) == test.cell_length - position
+
+
+def test_segment_lines_renderable():
+    lines = [[Segment("hello"), Segment(" "), Segment("world")], [Segment("foo")]]
+    segment_lines = SegmentLines(lines)
+    assert list(segment_lines.__rich_console__(None, None)) == [
+        Segment("hello"),
+        Segment(" "),
+        Segment("world"),
+        Segment("foo"),
+    ]
+
+    segment_lines = SegmentLines(lines, new_lines=True)
+    assert list(segment_lines.__rich_console__(None, None)) == [
+        Segment("hello"),
+        Segment(" "),
+        Segment("world"),
+        Segment("\n"),
+        Segment("foo"),
+        Segment("\n"),
+    ]
+
+
+def test_align_top():
+    lines = [[Segment("X")]]
+    assert Segment.align_top(lines, 3, 1, Style()) == lines
+    assert Segment.align_top(lines, 3, 3, Style()) == [
+        [Segment("X")],
+        [Segment("   ", Style())],
+        [Segment("   ", Style())],
+    ]
+
+
+def test_align_middle():
+    lines = [[Segment("X")]]
+    assert Segment.align_middle(lines, 3, 1, Style()) == lines
+    assert Segment.align_middle(lines, 3, 3, Style()) == [
+        [Segment("   ", Style())],
+        [Segment("X")],
+        [Segment("   ", Style())],
+    ]
+
+
+def test_align_bottom():
+    lines = [[Segment("X")]]
+    assert Segment.align_bottom(lines, 3, 1, Style()) == lines
+    assert Segment.align_bottom(lines, 3, 3, Style()) == [
+        [Segment("   ", Style())],
+        [Segment("   ", Style())],
+        [Segment("X")],
+    ]

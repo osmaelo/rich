@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Optional, Union
 
 from .color import Color
 from .console import Console, ConsoleOptions, RenderResult
@@ -32,7 +32,7 @@ class Bar(JupyterMixin):
         begin: float,
         end: float,
         *,
-        width: int = None,
+        width: Optional[int] = None,
         color: Union[Color, str] = "default",
         bgcolor: Union[Color, str] = "default",
     ):
@@ -48,7 +48,6 @@ class Bar(JupyterMixin):
     def __rich_console__(
         self, console: Console, options: ConsoleOptions
     ) -> RenderResult:
-
         width = min(
             self.width if self.width is not None else options.max_width,
             options.max_width,

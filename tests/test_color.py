@@ -14,11 +14,15 @@ import pytest
 
 
 def test_str() -> None:
-    assert str(Color.parse("red")) == "<color 'red' 1 (standard)>"
+    assert str(Color.parse("red")) == "Color('red', ColorType.STANDARD, number=1)"
 
 
 def test_repr() -> None:
-    assert repr(Color.parse("red")) == "<color 'red' 1 (standard)>"
+    assert repr(Color.parse("red")) == "Color('red', ColorType.STANDARD, number=1)"
+
+
+def test_color_system_repr() -> None:
+    assert repr(ColorSystem.EIGHT_BIT) == "ColorSystem.EIGHT_BIT"
 
 
 def test_rich() -> None:
@@ -120,7 +124,6 @@ def test_get_ansi_codes() -> None:
 
 
 def test_downgrade() -> None:
-
     assert Color.parse("color(9)").downgrade(0) == Color(
         "color(9)", ColorType.STANDARD, 9, None
     )

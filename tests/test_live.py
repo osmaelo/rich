@@ -1,12 +1,11 @@
 # encoding=utf-8
-import io
 import time
 from typing import Optional
 
 # import pytest
 from rich.console import Console
-from rich.text import Text
 from rich.live import Live
+from rich.text import Text
 
 
 def create_capture_console(
@@ -23,12 +22,11 @@ def create_capture_console(
 
 
 def test_live_state() -> None:
-
     with Live("") as live:
         assert live._started
         live.start()
 
-        assert live.renderable == ""
+        assert live.get_renderable() == ""
 
         assert live._started
         live.stop()
@@ -117,8 +115,6 @@ def test_growing_display_overflow_visible() -> None:
 
 def test_growing_display_autorefresh() -> None:
     """Test generating a table but using auto-refresh from threading"""
-    console = create_capture_console()
-
     console = create_capture_console(height=5)
     console.begin_capture()
     with Live(console=console, auto_refresh=True, vertical_overflow="visible") as live:
@@ -171,3 +167,21 @@ def test_live_screen() -> None:
     print(repr(result))
     expected = "\x1b[?1049h\x1b[H\x1b[?25l\x1b[Hfoo                 \n                    \n                    \n                    \n                    \x1b[Hfoo                 \n                    \n                    \n                    \n                    \x1b[?25h\x1b[?1049l"
     assert result == expected
+
+
+def test_live_empty() -> None:
+    """Regression test for https://github.com/Textualize/rich/issues/3796
+
+    No NL should be written if there was nothing rendered.
+    """
+
+    from rich.console import Group
+
+    console = create_capture_console(width=20, height=5)
+    console.begin_capture()
+    with Live(Group(), console=console, transient=True):
+        pass
+    result = console.end_capture()
+    print(repr(result))
+    assert "\n" not in result
+    assert result == "\x1b[?25l\r\x1b[2K\x1b[?25h\r"

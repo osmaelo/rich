@@ -1,4 +1,5 @@
 import sys
+
 import pytest
 
 from rich.console import Console
@@ -45,6 +46,9 @@ def test_render():
 
     assert layout["root"].name == "root"
     assert layout["left"].name == "left"
+
+    assert isinstance(layout.map, dict)
+
     with pytest.raises(KeyError):
         top["asdasd"]
 
@@ -59,6 +63,7 @@ def test_render():
     result = capture.get()
     print(repr(result))
     expected = "╭──────────────────────────────────────────────────────────╮\n│ foo                                                      │\n│                                                          │\n│                                                          │\n╰──────────────────────────────────────────────────────────╯\nfoobar                        ╭───── 'right' (30 x 5) ─────╮\n                              │                            │\n                              │    Layout(name='right')    │\n                              │                            │\n                              ╰────────────────────────────╯\n"
+
     assert result == expected
 
 
@@ -73,8 +78,8 @@ def test_tree():
         console.print(layout.tree, height=10)
     result = capture.get()
     print(repr(result))
-    expected = "⬍ Layout(name='root')                                       \n├── ⬍ Layout(size=2)                                        \n└── ⬌ Layout(name='bar')                                    \n    ├── ⬍ Layout()                                          \n    └── ⬍ Layout()                                          \n"
-
+    expected = "⬍ Layout(name='root')\n├── ⬍ Layout(size=2)\n└── ⬌ Layout(name='bar')\n    ├── ⬍ Layout()\n    └── ⬍ Layout()\n"
+    print(result, "\n", expected)
     assert result == expected
 
 
@@ -82,14 +87,14 @@ def test_tree():
 def test_refresh_screen():
     layout = Layout()
     layout.split_row(Layout(name="foo"), Layout(name="bar"))
-    console = Console(force_terminal=True, width=20, height=5)
+    console = Console(force_terminal=True, width=20, height=5, _environ={})
     with console.capture():
         console.print(layout)
     with console.screen():
         with console.capture() as capture:
             layout.refresh_screen(console, "foo")
     result = capture.get()
+    print()
     print(repr(result))
-    expected = "\x1b[1;1H\x1b[34m╭─\x1b[0m\x1b[34m \x1b[0m\x1b[32m'foo'\x1b[0m\x1b[34m─╮\x1b[0m\x1b[2;1H\x1b[34m│\x1b[0m \x1b[95mLayout\x1b[0m \x1b[34m│\x1b[0m\x1b[3;1H\x1b[34m│\x1b[0m \x1b[1m(\x1b[0m      \x1b[34m│\x1b[0m\x1b[4;1H\x1b[34m│\x1b[0m     \x1b[33mna\x1b[0m \x1b[34m│\x1b[0m\x1b[5;1H\x1b[34m╰────────╯\x1b[0m"
-
+    expected = "\x1b[1;1H\x1b[34m╭─\x1b[0m\x1b[34m \x1b[0m\x1b[32m'foo'\x1b[0m\x1b[34m─╮\x1b[0m\x1b[2;1H\x1b[34m│\x1b[0m \x1b[1;35mLayout\x1b[0m \x1b[34m│\x1b[0m\x1b[3;1H\x1b[34m│\x1b[0m \x1b[1m(\x1b[0m      \x1b[34m│\x1b[0m\x1b[4;1H\x1b[34m│\x1b[0m     \x1b[33mna\x1b[0m \x1b[34m│\x1b[0m\x1b[5;1H\x1b[34m╰────────╯\x1b[0m"
     assert result == expected

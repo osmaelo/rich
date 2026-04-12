@@ -1,7 +1,4 @@
-from threading import RLock
-from typing import Optional, Tuple
-
-from typing_extensions import Literal
+from typing import Literal, Optional, Tuple
 
 from ._loop import loop_last
 from .console import Console, ConsoleOptions, RenderableType, RenderResult
@@ -31,6 +28,17 @@ class LiveRender:
         self.style = style
         self.vertical_overflow = vertical_overflow
         self._shape: Optional[Tuple[int, int]] = None
+
+    @property
+    def last_render_height(self) -> int:
+        """The number of lines in the last render (may be 0 if nothing was rendered).
+
+        Returns:
+            Height in lines
+        """
+        if self._shape is None:
+            return 0
+        return self._shape[1]
 
     def set_renderable(self, renderable: RenderableType) -> None:
         """Set a new renderable.
@@ -78,18 +86,16 @@ class LiveRender:
     def __rich_console__(
         self, console: Console, options: ConsoleOptions
     ) -> RenderResult:
-
         renderable = self.renderable
-        _Segment = Segment
         style = console.get_style(self.style)
         lines = console.render_lines(renderable, options, style=style, pad=False)
-        shape = _Segment.get_shape(lines)
+        shape = Segment.get_shape(lines)
 
         _, height = shape
         if height > options.size.height:
             if self.vertical_overflow == "crop":
                 lines = lines[: options.size.height]
-                shape = _Segment.get_shape(lines)
+                shape = Segment.get_shape(lines)
             elif self.vertical_overflow == "ellipsis":
                 lines = lines[: (options.size.height - 1)]
                 overflow_text = Text(
@@ -100,10 +106,11 @@ class LiveRender:
                     style="live.ellipsis",
                 )
                 lines.append(list(console.render(overflow_text)))
-                shape = _Segment.get_shape(lines)
+                shape = Segment.get_shape(lines)
         self._shape = shape
 
+        new_line = Segment.line()
         for last, line in loop_last(lines):
             yield from line
             if not last:
-                yield _Segment.line()
+                yield new_line

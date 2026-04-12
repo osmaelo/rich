@@ -1,5 +1,5 @@
-from rich.control import Control, strip_control_codes
-from rich.segment import Segment, ControlType
+from rich.control import Control, escape_control_codes, strip_control_codes
+from rich.segment import ControlType, Segment
 
 
 def test_control():
@@ -11,6 +11,12 @@ def test_strip_control_codes():
     assert strip_control_codes("") == ""
     assert strip_control_codes("foo\rbar") == "foobar"
     assert strip_control_codes("Fear is the mind killer") == "Fear is the mind killer"
+
+
+def test_escape_control_codes():
+    assert escape_control_codes("") == ""
+    assert escape_control_codes("foo\rbar") == "foo\\rbar"
+    assert escape_control_codes("Fear is the mind killer") == "Fear is the mind killer"
 
 
 def test_control_move_to():
@@ -32,10 +38,25 @@ def test_control_move():
     )
 
 
-def test_move_to_row():
-    print(repr(Control.move_to_row(10, 20).segment))
-    assert Control.move_to_row(10, 20).segment == Segment(
-        "\x1b[12G\x1b[20B",
+def test_move_to_column():
+    print(repr(Control.move_to_column(10, 20).segment))
+    assert Control.move_to_column(10, 20).segment == Segment(
+        "\x1b[11G\x1b[20B",
         None,
-        [(ControlType.CURSOR_MOVE_TO_ROW, 11), (ControlType.CURSOR_DOWN, 20)],
+        [(ControlType.CURSOR_MOVE_TO_COLUMN, 10), (ControlType.CURSOR_DOWN, 20)],
+    )
+
+    assert Control.move_to_column(10, -20).segment == Segment(
+        "\x1b[11G\x1b[20A",
+        None,
+        [(ControlType.CURSOR_MOVE_TO_COLUMN, 10), (ControlType.CURSOR_UP, 20)],
+    )
+
+
+def test_title():
+    control_segment = Control.title("hello").segment
+    assert control_segment == Segment(
+        "\x1b]0;hello\x07",
+        None,
+        [(ControlType.SET_WINDOW_TITLE, "hello")],
     )

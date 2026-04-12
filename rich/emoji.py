@@ -1,11 +1,16 @@
-from typing import Union
+import sys
+from typing import TYPE_CHECKING, Literal, Optional, Union
 
-from .console import Console, ConsoleOptions, RenderResult
+from ._emoji_replace import _emoji_replace
 from .jupyter import JupyterMixin
 from .segment import Segment
 from .style import Style
-from ._emoji_codes import EMOJI
-from ._emoji_replace import _emoji_replace
+
+if TYPE_CHECKING:
+    from .console import Console, ConsoleOptions, RenderResult
+
+
+EmojiVariant = Literal["emoji", "text"]
 
 
 class NoEmoji(Exception):
@@ -13,9 +18,16 @@ class NoEmoji(Exception):
 
 
 class Emoji(JupyterMixin):
-    __slots__ = ["name", "style", "_char"]
+    __slots__ = ["name", "style", "_char", "variant"]
 
-    def __init__(self, name: str, style: Union[str, Style] = "none") -> None:
+    VARIANTS = {"text": "\ufe0e", "emoji": "\ufe0f"}
+
+    def __init__(
+        self,
+        name: str,
+        style: Union[str, Style] = "none",
+        variant: Optional[EmojiVariant] = None,
+    ) -> None:
         """A single emoji character.
 
         Args:
@@ -25,12 +37,17 @@ class Emoji(JupyterMixin):
         Raises:
             NoEmoji: If the emoji doesn't exist.
         """
+        from ._emoji_codes import EMOJI
+
         self.name = name
         self.style = style
+        self.variant = variant
         try:
             self._char = EMOJI[name]
         except KeyError:
             raise NoEmoji(f"No emoji called {name!r}")
+        if variant is not None:
+            self._char += self.VARIANTS.get(variant, "")
 
     @classmethod
     def replace(cls, text: str) -> str:
@@ -51,8 +68,8 @@ class Emoji(JupyterMixin):
         return self._char
 
     def __rich_console__(
-        self, console: Console, options: ConsoleOptions
-    ) -> RenderResult:
+        self, console: "Console", options: "ConsoleOptions"
+    ) -> "RenderResult":
         yield Segment(self._char, console.get_style(self.style))
 
 
@@ -64,8 +81,10 @@ if __name__ == "__main__":  # pragma: no cover
 
     console = Console(record=True)
 
+    from ._emoji_codes import EMOJI
+
     columns = Columns(
-        (f":{name}: {name}" for name in sorted(EMOJI.keys()) if "\u200D" not in name),
+        (f":{name}: {name}" for name in sorted(EMOJI.keys()) if "\u200d" not in name),
         column_first=True,
     )
 

@@ -23,21 +23,21 @@ This will draw a box the size of the terminal with some information regarding th
     layout.split_column(
         Layout(name="upper"),
         Layout(name="lower")
-    )    
+    )
     print(layout)
 
-This will divide the terminal screen in to two equal sized portions, one on top of the other. The ``name`` attribute is an internal identifier we can use to look up the sub-layout later. Let's use that to create another split, this time we will call :meth:`~rich.layout.Layout.split_row` to split the lower layout in to a row of two sub-layouts.
+This will divide the terminal screen in to two equal sized portions, one on top of the other. The ``name`` attribute is an internal identifier we can use to look up the sub-layout later. Let's use that to create another split, this time we will call :meth:`~rich.layout.Layout.split_row` to split the lower layout in to a row of two sub-layouts::
 
     layout["lower"].split_row(
         Layout(name="left"),
-        Layout(name="right"),       
-    )    
+        Layout(name="right"),
+    )
     print(layout)
 
 You should now see the screen area divided in to 3 portions; an upper half and a lower half that is split in to two quarters.
 
 .. raw:: html
-    
+
     <pre style="font-size:90%;font-family:Menlo,'DejaVu Sans Mono',consolas,'Courier New',monospace"><span style="color: #000080">╭─────────────────────────────── </span><span style="color: #008000">'upper'</span><span style="color: #000080"> </span><span style="color: #000080; font-weight: bold">(</span><span style="color: #000080; font-weight: bold">84</span><span style="color: #000080"> x </span><span style="color: #000080; font-weight: bold">13</span><span style="color: #000080; font-weight: bold">)</span><span style="color: #000080"> ────────────────────────────────╮</span>
     <span style="color: #000080">│</span>                                                                                  <span style="color: #000080">│</span>
     <span style="color: #000080">│</span>                                                                                  <span style="color: #000080">│</span>
@@ -74,6 +74,8 @@ Setting renderables
 
 The first position argument to ``Layout`` can be any Rich renderable, which will be sized to fit within the layout's area. Here's how we might divide the "right" layout in to two panels::
 
+    from rich.panel import Panel
+    
     layout["right"].split(
         Layout(Panel("Hello")),
         Layout(Panel("World!"))
@@ -99,7 +101,7 @@ This will set the upper portion to be exactly 10 rows, no matter the size of the
 Ratio
 -----
 
-In addition to a fixed size, you can also make a flexible layout setting the ``ratio`` argument on the constructor or by assigning to the attribute. The ratio defines how much of the screen the layout should occupy in relation to other layouts. For example, lets reset the size and set the ratio of the upper layout to 2::
+In addition to a fixed size, you can also make a flexible layout setting the ``ratio`` argument on the constructor or by assigning to the attribute. The ratio defines how much of the screen the layout should occupy in relation to other layouts. For example, let's reset the size and set the ratio of the upper layout to 2::
 
     layout["upper"].size = None
     layout["upper"].ratio = 2
@@ -124,7 +126,7 @@ The top layout is now invisible, and the "lower" layout will expand to fill the 
     layout["upper"].visible = True
     print(layout)
 
-You could use this to toggle parts of your interface based on your applications configuration.
+You could use this to toggle parts of your interface based on your application's configuration.
 
 Tree
 ----

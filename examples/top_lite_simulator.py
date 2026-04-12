@@ -1,5 +1,4 @@
 """Lite simulation of the top linux command."""
-
 import datetime
 import random
 import time
@@ -9,7 +8,7 @@ from rich import box
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
-from typing_extensions import Literal
+from typing import Literal
 
 
 @dataclass
@@ -49,7 +48,6 @@ def generate_process(pid: int) -> Process:
 
 
 def create_process_table(height: int) -> Table:
-
     processes = sorted(
         [generate_process(pid) for pid in range(height)],
         key=lambda p: p.cpu_percent,
